@@ -1,0 +1,108 @@
+;; gorilla-repl.fileformat = 1
+
+;; **
+;;; # Gorilla REPL
+;;; 
+;;; Welcome to gorilla :-) Shift + enter evaluates code. Poke the question mark (top right) to learn more ...
+;; **
+
+;; @@
+(def number1 [8 7 8 3 1 8 8 1 6 7])
+(def number2 [3 1 4 10 8 1 3 10 10 9])
+(defn pairs
+  [number1 number2]
+  {:number1 number1
+   :number2 number2})
+
+(def pairm (map pairs number1 number2))
+
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/pairm</span>","value":"#'user/pairm"}
+;; <=
+
+;; @@
+(def archive ())
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/archive</span>","value":"#'user/archive"}
+;; <=
+
+;; @@
+(defn build-archive
+  [pairm archive]
+(if (= 0 (- (count
+              (filter #(>= (:number2 %) (:number2 (nth pairm 5))) 
+              (filter #(>= (:number1 %) (:number1 (nth pairm 5))) pairm))) 1))
+ (cons (nth pairm 5) archive) (cons () archive)))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/build-archive</span>","value":"#'user/build-archive"}
+;; <=
+
+;; @@
+(build-archive pairm archive)
+;; @@
+;; =>
+;;; {"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[],"value":"()"}],"value":"(())"}
+;; <=
+
+;; @@
+(defn build-archive
+  [pairm archive]
+  (let [counter 0]
+(take 5 (iterate (if (= 0 (- (count
+              (filter #(>= (:number2 %) (:number2 (nth counter))) 
+              (filter #(>= (:number1 %) (:number1 (nth counter))) pairm))) 1))
+ (cons (nth pairm counter) archive) (cons () archive))))))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/build-archive</span>","value":"#'user/build-archive"}
+;; <=
+
+;; @@
+(defn build-archive
+  [pairm archive]
+  (let [counter 9]
+    (filter #(>= (:number1 %) (:number1 (nth counter))) pairm)))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/build-archive</span>","value":"#'user/build-archive"}
+;; <=
+
+;; @@
+(defn build-archive
+  [pairm archive counter]
+(if (= 0 (- (count
+              (filter #(>= (:number2 %) (:number2 (nth pairm counter))) 
+              (filter #(>= (:number1 %) (:number1 (nth pairm counter))) pairm))) 1))
+ (cons (nth pairm counter) archive) (cons () archive)))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/build-archive</span>","value":"#'user/build-archive"}
+;; <=
+
+;; @@
+(def archive (build-archive pairm archive 0))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/archive</span>","value":"#'user/archive"}
+;; <=
+
+;; @@
+archive
+;; @@
+;; =>
+;;; {"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[],"value":"()"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[],"value":"()"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:number1</span>","value":":number1"},{"type":"html","content":"<span class='clj-long'>8</span>","value":"8"}],"value":"[:number1 8]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:number2</span>","value":":number2"},{"type":"html","content":"<span class='clj-long'>4</span>","value":"4"}],"value":"[:number2 4]"}],"value":"{:number1 8, :number2 4}"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[],"value":"()"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[],"value":"()"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[],"value":"()"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[],"value":"()"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[],"value":"()"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:number1</span>","value":":number1"},{"type":"html","content":"<span class='clj-long'>6</span>","value":"6"}],"value":"[:number1 6]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:number2</span>","value":":number2"},{"type":"html","content":"<span class='clj-long'>10</span>","value":"10"}],"value":"[:number2 10]"}],"value":"{:number1 6, :number2 10}"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:number1</span>","value":":number1"},{"type":"html","content":"<span class='clj-long'>7</span>","value":"7"}],"value":"[:number1 7]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:number2</span>","value":":number2"},{"type":"html","content":"<span class='clj-long'>9</span>","value":"9"}],"value":"[:number2 9]"}],"value":"{:number1 7, :number2 9}"}],"value":"(() () {:number1 8, :number2 4} () () () () () {:number1 6, :number2 10} {:number1 7, :number2 9})"}
+;; <=
+
+;; @@
+(flatten archive)
+;; @@
+;; =>
+;;; {"type":"list-like","open":"<span class='clj-lazy-seq'>(<span>","close":"<span class='clj-lazy-seq'>)</span>","separator":" ","items":[{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:number1</span>","value":":number1"},{"type":"html","content":"<span class='clj-long'>8</span>","value":"8"}],"value":"[:number1 8]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:number2</span>","value":":number2"},{"type":"html","content":"<span class='clj-long'>4</span>","value":"4"}],"value":"[:number2 4]"}],"value":"{:number1 8, :number2 4}"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:number1</span>","value":":number1"},{"type":"html","content":"<span class='clj-long'>6</span>","value":"6"}],"value":"[:number1 6]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:number2</span>","value":":number2"},{"type":"html","content":"<span class='clj-long'>10</span>","value":"10"}],"value":"[:number2 10]"}],"value":"{:number1 6, :number2 10}"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:number1</span>","value":":number1"},{"type":"html","content":"<span class='clj-long'>7</span>","value":"7"}],"value":"[:number1 7]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:number2</span>","value":":number2"},{"type":"html","content":"<span class='clj-long'>9</span>","value":"9"}],"value":"[:number2 9]"}],"value":"{:number1 7, :number2 9}"}],"value":"({:number1 8, :number2 4} {:number1 6, :number2 10} {:number1 7, :number2 9})"}
+;; <=
+
+;; @@
+
+;; @@
