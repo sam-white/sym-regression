@@ -7,4 +7,4 @@ A symbolic regression program to find physical laws from experimental data. The 
 
 Copyright © 2014 Sam White
 
-The code in this project is licenced to you under the MIT liscense.
+The code in this project is licenced to you under the MIT license.
