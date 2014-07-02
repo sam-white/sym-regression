@@ -1,6 +1,6 @@
 # sym-regression
 
-A symbolic regression program to find physical laws from experimental data. The program can be configured by opening the interface.clj file in Gorilla REPL. 
+A symbolic regression program designed to find physical laws governing experimental data. The program can be configured by opening the interface.clj file in Gorilla REPL. 
 
 
 ## License
