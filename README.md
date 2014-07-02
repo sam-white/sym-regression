@@ -1,14 +1,10 @@
-# sym-regression-project
+# sym-regression
 
-A Clojure library designed to ... well, that part is up to you.
+A symbolic regression program to find physical laws from experimental data. The program can be configured by opening the interface.clj file in Gorilla REPL. 
 
-## Usage
-
-FIXME
 
 ## License
 
-Copyright © 2014 FIXME
+Copyright © 2014 Sam White
 
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+The code in this project is licenced to you under the MIT liscense.
