@@ -2,8 +2,6 @@
 
 ;; **
 ;;; # Gorilla REPL
-;;; 
-;;; Welcome to gorilla :-) Shift + enter evaluates code. Poke the question mark (top right) to learn more ...
 ;; **
 
 ;; **
@@ -11,7 +9,8 @@
 ;; **
 
 ;; @@
-
+(use '[clojure repl pprint walk])
+(use '[clojure.zip :as zip])
 (use 'gorilla-plot.core)
 (use '[gorilla-repl table html])
 (use 'sym-regression-project.render :reload)
@@ -21,23 +20,52 @@
 ;;; {"type":"html","content":"<span class='clj-nil'>nil</span>","value":"nil"}
 ;; <=
 
+;; @@
+(def data (doall (map (fn [x] [x (+ (* 3 x) (* 2 x x))]) (range 0 10 0.5))))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/data</span>","value":"#'user/data"}
+;; <=
+
 ;; **
 ;;; Program configuration.
 ;; **
 
-;; **
-;;; 
-;; **
+;; @@
+(defn evolve
+  [population config]
+  (let [{:keys [score-1-func score-2-func mutation-new-tree-func tournament-size clone-n mutate-n crossover-n]} config
+       
+        
+        previous-archive (filter #(true? (:archived %)) population)
+        objective-scored-popn (score-population (filter #(nil? (:archived %)) population) score-1-func score-2-func)
+        archive (flatten (filter #(not (nil? %)) (cons previous-archive (map #(merge  {:archived true} %) (flatten (into-archive should-be-archived is-dominated objective-scored-popn objective-scored-popn))))))
+        checked-archive (flatten (into-archive should-be-archived is-dominated archive archive))
+        scored-archive (map #(strength-func % objective-scored-popn) checked-archive)
+        scored-true-popn (map #(fitness-population % scored-archive) objective-scored-popn)
+        population-for-selection (flatten (cons scored-archive scored-true-popn))
+       
+        clones (repeatedly clone-n #(tournament-selector population-for-selection tournament-size))
+        mutations (repeatedly mutate-n 
+                              #(mutate-expr 
+                                (tournament-selector population-for-selection tournament-size)
+                                mutation-new-tree-func))
+        crossovers (reduce into (repeatedly crossover-n
+                               #(crossover-expr
+                                 (tournament-selector population-for-selection tournament-size)
+                                 (tournament-selector population-for-selection tournament-size))))]
+    (into checked-archive (into clones (into mutations crossovers)))))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/evolve</span>","value":"#'user/evolve"}
+;; <=
 
 ;; @@
-;; Configuration for evolve function.
-(def config {:score-func (memoize #(score-multi data %))
-             ;; if score-1 is changed will need to change inputs here
+(def config {
              :score-1-func (memoize #(score-1 data %))
-             ;; if score-2 is changed, will need to change inputs here
-             :score-2-func (memoize #(score-2 %))
+             :score-2-func (memoize #(score-2 count-nodes %))
              :mutation-new-tree-func #(random-full-tree functions terminals 3)
-             :tournament-size 5
+             :tournament-size 2
              :clone-n 40
              :crossover-n 25
              :mutate-n 10})
@@ -59,7 +87,7 @@
 (time (def run-data (doall (take 20 (iterate #(evolve % config) init-pop)))))
 ;; @@
 ;; ->
-;;; &quot;Elapsed time: 4377.617704 msecs&quot;
+;;; &quot;Elapsed time: 5861.024436 msecs&quot;
 ;;; 
 ;; <-
 ;; =>

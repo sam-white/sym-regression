@@ -5,8 +5,7 @@
 ;; This program will run a simple symbolic regression using data from a quadratic function. 
 
 
-;; Generate a data set to fit to
-(def data (doall (map (fn [x] [x (+ (* 3 x) (* 2 x x))]) (range 0 10 0.5)))) 
+
 
 ;; Define the protected division function.
 (defn pdiv [x y] (if (zero? y) 1 (/ x y)))
@@ -48,15 +47,8 @@
 
 ;; Second parameter to be optimised. Currently this counts the number of nodes in an s-expression.
 (defn score-2
-  [ex]
-  (if (seq? ex)
-  	(+ 1 (apply + (map score-2 (rest ex))))
-    1))
-
-;; Define optimisation function using scalarisation technique. Alter   coefficients to tune optimisation. Coefficients must sum to 1.
-(defn score-multi
-  [data ex]
-  (+ (* 1 (score-1 data ex)) (* 0 (score-2 ex))))
+[count-nodes ex]
+(* -1 (count-nodes ex)))
 
 ;; Generate zipper constructor.
 (defn expr-zip
@@ -78,7 +70,7 @@
 (defn count-nodes
   [ex]
   (if (seq? ex)
-  	(+ 1 (apply + (map score-2 (rest ex))))
+  	(+ 1 (apply + (map count-nodes (rest ex))))
     1))
 
 ;; Define mutation operation.
@@ -105,29 +97,55 @@
 
 ;; Implement tournament selection.
 (defn score-population
-  [population score-func score-1-func score-2-func]
-  (map (fn [expr] {:expr expr :score (score-func expr) :score-1 (score-1-func expr) :score-2 (score-2-func expr)}) population))
+  [population score-1-func score-2-func]
+  (map (fn [expr] {:expr expr 
+                   :score-1 (score-1-func expr) 
+                   :score-2 (score-2-func expr) 
+                   :dominated false
+                   :fitness 0})
+       population))
+
+;; determine if one expression is dominated by another expression
+(defn is-dominated
+  [x y]
+  (if (or (and (<= (:score-1 x) (:score-1 y)) (< (:score-2 x) (:score-2 y))) 
+          (and (< (:score-1 x) (:score-1 y)) (<= (:score-2 x) (:score-2 y))))
+    (assoc x :dominated true) x))
+
+(defn should-be-archived
+  [is-dominated x y]
+  (if (:dominated (reduce is-dominated x y))
+    () x))
+
+(defn into-archive
+  [should-be-archived is-dominated x y]
+  (map #(should-be-archived is-dominated % y) x))
+
+(defn strength-func
+  [archive popn]
+  (assoc archive :fitness 
+                  (/ 
+                   (count 
+                    (filter #(and (>= (:score-1 archive) (:score-1 %)) (>= (:score-2 archive) (:score-2 %))) popn))
+                    (+ 1 (count popn)))))
+
+;; sum strengths of archive members
+(defn sum-strengths
+  [archive]
+  (reduce + (map #(:fitness %) archive)))
+
+(defn fitness-population
+  [popn scored-archive]
+  (assoc popn 
+    :fitness (+ 1 
+              (sum-strengths (filter #(and (<= (:score-1 popn) (:score-1 %)) (<= (:score-2 popn) (:score-2 %))) scored-archive)))))
 
 (defn tournament-selector
   [scored-popn tournament-size]
   (let [competitors (repeatedly tournament-size #(rand-nth scored-popn))]
-    (:expr (apply max-key :score competitors))))
+    (:expr (apply min-key :fitness competitors))))
 
-;; Function that generates next generation.
-(defn evolve
-  [population config]
-  (let [{:keys [score-func score-1-func score-2-func mutation-new-tree-func tournament-size clone-n mutate-n crossover-n]} config
-        scored-popn (score-population population score-func score-1-func score-2-func)
-        clones (repeatedly clone-n #(tournament-selector scored-popn tournament-size))
-        mutations (repeatedly mutate-n 
-                              #(mutate-expr 
-                                (tournament-selector scored-popn tournament-size)
-                                mutation-new-tree-func))
-        crossovers (reduce into (repeatedly crossover-n
-                               #(crossover-expr
-                                 (tournament-selector scored-popn tournament-size)
-                                 (tournament-selector scored-popn tournament-size))))]
-    (into clones (into mutations crossovers))))
+
 
 
 
