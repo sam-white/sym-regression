@@ -2,8 +2,8 @@
 (:require [clojure.zip :as zip])
 (use [clojure repl pprint walk]))
 
-;; This program will run a simple symbolic regression using data from a quadratic function. 
-
+;; This program will run a simple symbolic regression using data
+;; supplied in interface.clj. 
 
 
 
