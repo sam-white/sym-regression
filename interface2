@@ -1,0 +1,412 @@
+;; gorilla-repl.fileformat = 1
+
+;; **
+;;; # Gorilla REPL
+;; **
+
+;; **
+;;; Load in libraries and core functions.
+;; **
+
+;; @@
+(use '[clojure repl pprint walk])
+(use '[clojure.zip :as zip])
+(use 'gorilla-plot.core)
+(use '[gorilla-repl table html])
+(use 'sym-regression-project.render :reload)
+(use 'sym-regression-project.core :reload)
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-nil'>nil</span>","value":"nil"}
+;; <=
+
+;; **
+;;; Define a test function.
+;; **
+
+;; @@
+;(def data (doall (map (fn [x] [x (+ (* 3 x) (* 2 x x))]) (range 0 10 0.5))))
+(def data (doall (map (fn [x] [x (Math/sin x)]) (range 0 10 0.5))))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/data</span>","value":"#'user/data"}
+;; <=
+
+;; **
+;;; Program configuration.
+;; **
+
+;; @@
+(defn evolve
+  [population config]
+  (let [{:keys [score-1-func score-2-func mutation-new-tree-func tournament-size clone-n mutate-n crossover-n]} config
+       
+        
+        previous-archive (filter #(true? (:archived %)) population)
+        objective-scored-popn (score-population (filter #(nil? (:archived %)) population) score-1-func score-2-func)
+        archive (flatten (filter #(not (nil? %)) (cons previous-archive (map #(merge  {:archived true} %) (flatten (into-archive should-be-archived is-dominated objective-scored-popn objective-scored-popn))))))
+        checked-archive (into () (set (flatten (into-archive should-be-archived is-dominated archive archive))))
+       
+                                       
+        
+        
+        c-archive (map #(merge % {:cluster (.indexOf checked-archive %)}) checked-archive)
+        new-c-archive (last (clustering-done function-to-iterate func shortest-distance cluster-decision-map distance-calcs c-archive))
+        trimmed-c-archive (trim-cluster new-c-archive c-archive)
+       
+       
+        
+        
+                                       
+                                       ;need to make a checked-c-archive of just expressions and :archived true...
+                                       
+                                       
+                                       
+        scored-archive (map #(strength-func % objective-scored-popn) trimmed-c-archive)                               
+        scored-true-popn (map #(fitness-population % scored-archive) objective-scored-popn)
+        population-for-selection (flatten (cons scored-archive scored-true-popn))
+       
+        clones (repeatedly clone-n #(tournament-selector population-for-selection tournament-size))
+        mutations (repeatedly mutate-n 
+                              #(mutate-expr 
+                                (tournament-selector population-for-selection tournament-size)
+                                mutation-new-tree-func))
+        crossovers (reduce into (repeatedly crossover-n
+                               #(crossover-expr
+                                 (tournament-selector population-for-selection tournament-size)
+                                 (tournament-selector population-for-selection tournament-size))))]
+    (into trimmed-c-archive (into clones (into mutations crossovers)))))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/evolve</span>","value":"#'user/evolve"}
+;; <=
+
+;; @@
+
+
+;; @@
+
+;; @@
+(def config {
+             :score-1-func (memoize #(score-1 data %))
+             :score-2-func (memoize #(score-2 count-nodes %))
+             :mutation-new-tree-func #(random-full-tree functions terminals 3)
+             :tournament-size 2
+             :clone-n 40
+             :crossover-n 25
+             :mutate-n 10})
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/config</span>","value":"#'user/config"}
+;; <=
+
+;; @@
+(defn distance
+  [x y]
+  (Math/sqrt 
+   (+ (* (- (:score-1 x) (:score-1 y)) (- (:score-1 x) (:score-1 y))) 
+      (* (- (:score-2 x) (:score-2 y)) (- (:score-2 x) (:score-2 y))))))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/distance</span>","value":"#'user/distance"}
+;; <=
+
+;; @@
+(defn gen-map
+  [distance cluster-first cluster-second]
+  {:first-cluster (:cluster cluster-first)
+   :second-cluster (:cluster cluster-second)
+   :distance (distance cluster-first cluster-second)})
+
+(defn first-map
+  [gen-map distance cluster-first cluster-second]
+(map #(gen-map distance % cluster-second) cluster-first))
+
+(defn second-map
+  [first-map distance cluster-first cluster-second]
+  (map #(first-map gen-map distance cluster-first %) cluster-second))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/second-map</span>","value":"#'user/second-map"}
+;; <=
+
+;; @@
+(defn distance-calcs
+  [c-archive]
+  (filter #(not (= (:first-cluster %) (:second-cluster %)))
+  (flatten (second-map first-map distance (flatten c-archive) (flatten c-archive)))))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/distance-calcs</span>","value":"#'user/distance-calcs"}
+;; <=
+
+;; @@
+(defn cluster-decision-map
+  [filter-cluster counter1 counter2]
+  {:first-cluster  counter1
+   :second-cluster  counter2
+   :total-distance (pdiv (reduce + (map #(:distance %) (filter #(= counter2 (:second-cluster %)) (filter #(= counter1 (:first-cluster %)) filter-cluster)))) (* (count (filter #(= counter1 (:first-cluster %)) filter-cluster)) (count (filter #(= counter1 (:first-cluster %)) filter-cluster))))})
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/cluster-decision-map</span>","value":"#'user/cluster-decision-map"}
+;; <=
+
+;; @@
+(defn shortest-distance
+  [cluster-decision-map distance-calcs c-archive]
+(apply min-key :total-distance
+ (filter #(not (= 0 (:total-distance %)))
+        (flatten (for [counter2 (into [] (range 0 (+ 1 (:first-cluster (apply max-key :first-cluster (distance-calcs c-archive))))))]
+          (for [counter1 (into [] (range 0 (+ 1 (:first-cluster (apply max-key :first-cluster (distance-calcs c-archive))))))]
+           (cluster-decision-map (distance-calcs c-archive) counter1 counter2)))))))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/shortest-distance</span>","value":"#'user/shortest-distance"}
+;; <=
+
+;; @@
+(defn func
+  [shortest-distance cluster-decision-map distance-calcs c-archive]
+(let [clo-clusters (filter #(or (= (:first-cluster (shortest-distance cluster-decision-map distance-calcs c-archive)) (:cluster %))
+             (= (:second-cluster (shortest-distance cluster-decision-map distance-calcs c-archive)) (:cluster %))) c-archive)
+    archive-without (filter #(and (not (= (:first-cluster (shortest-distance cluster-decision-map distance-calcs c-archive)) (:cluster %)))
+             (not(= (:second-cluster (shortest-distance cluster-decision-map distance-calcs c-archive)) (:cluster %)))) c-archive)
+      new-archive-entry (map #(assoc % :cluster (:cluster (first clo-clusters))) clo-clusters)
+      new-archive (flatten (cons new-archive-entry archive-without))]                             
+  new-archive))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/func</span>","value":"#'user/func"}
+;; <=
+
+;; @@
+(defn function-to-iterate
+  [func shortest-distance cluster-decision-map distance-calcs c-archive]
+(iterate #(func shortest-distance cluster-decision-map distance-calcs %) c-archive))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/function-to-iterate</span>","value":"#'user/function-to-iterate"}
+;; <=
+
+;; @@
+(defn clustering-done
+  [function-to-iterate func shortest-distance cluster-decision-map distance-calcs c-archive]
+  (if (> (count (map #(:cluster %) c-archive)) 5)
+(take (- (count (map #(:cluster %) c-archive)) 4) (function-to-iterate func shortest-distance cluster-decision-map distance-calcs c-archive)) c-archive))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/clustering-done</span>","value":"#'user/clustering-done"}
+;; <=
+
+;; @@
+(defn trim-cluster
+  [new-c-archive c-archive]
+  (if (> (count (map #(:cluster %) c-archive)) 5)
+(flatten (for [counter (into [] (range 0 (+ 1 (:cluster (apply max-key :cluster new-c-archive)))))]
+  (if (empty? (filter #(= counter (:cluster %)) new-c-archive))
+  () (rand-nth (filter #(= counter (:cluster %)) new-c-archive))))) c-archive))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/trim-cluster</span>","value":"#'user/trim-cluster"}
+;; <=
+
+;; @@
+;; Generate an initial population (default size 100).
+(def init-pop (repeatedly 100 #(random-full-tree functions terminals 3)))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/init-pop</span>","value":"#'user/init-pop"}
+;; <=
+
+;; @@
+;; Run algorithm and time (default loop 20 times).
+(time (def run-data (doall (take 20 (iterate #(evolve % config) init-pop)))))
+;; @@
+;; ->
+;;; &quot;Elapsed time: 93856.910927 msecs&quot;
+;;; 
+;; <-
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/run-data</span>","value":"#'user/run-data"}
+;; <=
+
+;; @@
+ (filter #(true? (:archived %)) (nth run-data 19))
+;; @@
+;; =>
+;;; {"type":"list-like","open":"<span class='clj-lazy-seq'>(<span>","close":"<span class='clj-lazy-seq'>)</span>","separator":" ","items":[{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:cluster</span>","value":":cluster"},{"type":"html","content":"<span class='clj-unkown'>0</span>","value":"0"}],"value":"[:cluster 0]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:fitness</span>","value":":fitness"},{"type":"html","content":"<span class='clj-long'>0</span>","value":"0"}],"value":"[:fitness 0]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:dominated</span>","value":":dominated"},{"type":"html","content":"<span class='clj-unkown'>false</span>","value":"false"}],"value":"[:dominated false]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-2</span>","value":":score-2"},{"type":"html","content":"<span class='clj-long'>-17</span>","value":"-17"}],"value":"[:score-2 -17]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-1</span>","value":":score-1"},{"type":"html","content":"<span class='clj-double'>-10.229031892543055</span>","value":"-10.229031892543055"}],"value":"[:score-1 -10.229031892543055]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:expr</span>","value":":expr"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>pdiv</span>","value":"pdiv"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>-</span>","value":"-"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>-</span>","value":"-"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>*</span>","value":"*"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(* x x)"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(- (* x x) x)"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>pdiv</span>","value":"pdiv"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>-</span>","value":"-"},{"type":"html","content":"<span class='clj-double'>0.051128920450839055</span>","value":"0.051128920450839055"},{"type":"html","content":"<span class='clj-double'>0.9302342847080949</span>","value":"0.9302342847080949"}],"value":"(- 0.051128920450839055 0.9302342847080949)"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>*</span>","value":"*"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-double'>0.7581566014870404</span>","value":"0.7581566014870404"}],"value":"(* x 0.7581566014870404)"}],"value":"(pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404))"}],"value":"(- (- (* x x) x) (pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404)))"},{"type":"html","content":"<span class='clj-double'>0.3880566416049639</span>","value":"0.3880566416049639"}],"value":"(+ (- (- (* x x) x) (pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639)"}],"value":"(pdiv x (+ (- (- (* x x) x) (pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639))"}],"value":"[:expr (pdiv x (+ (- (- (* x x) x) (pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639))]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:archived</span>","value":":archived"},{"type":"html","content":"<span class='clj-unkown'>true</span>","value":"true"}],"value":"[:archived true]"}],"value":"{:cluster 0, :fitness 0, :dominated false, :score-2 -17, :score-1 -10.229031892543055, :expr (pdiv x (+ (- (- (* x x) x) (pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639)), :archived true}"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:cluster</span>","value":":cluster"},{"type":"html","content":"<span class='clj-unkown'>1</span>","value":"1"}],"value":"[:cluster 1]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:fitness</span>","value":":fitness"},{"type":"html","content":"<span class='clj-long'>0</span>","value":"0"}],"value":"[:fitness 0]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:dominated</span>","value":":dominated"},{"type":"html","content":"<span class='clj-unkown'>false</span>","value":"false"}],"value":"[:dominated false]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-2</span>","value":":score-2"},{"type":"html","content":"<span class='clj-long'>-11</span>","value":"-11"}],"value":"[:score-2 -11]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-1</span>","value":":score-1"},{"type":"html","content":"<span class='clj-double'>-10.384219526404047</span>","value":"-10.384219526404047"}],"value":"[:score-1 -10.384219526404047]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:expr</span>","value":":expr"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>pdiv</span>","value":"pdiv"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"html","content":"<span class='clj-double'>0.11739220057535216</span>","value":"0.11739220057535216"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"html","content":"<span class='clj-double'>0.11739220057535216</span>","value":"0.11739220057535216"},{"type":"html","content":"<span class='clj-double'>0.43886948555458694</span>","value":"0.43886948555458694"}],"value":"(+ 0.11739220057535216 0.43886948555458694)"}],"value":"(+ 0.11739220057535216 (+ 0.11739220057535216 0.43886948555458694))"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>*</span>","value":"*"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(* x x)"}],"value":"(+ (+ 0.11739220057535216 (+ 0.11739220057535216 0.43886948555458694)) (* x x))"}],"value":"(pdiv x (+ (+ 0.11739220057535216 (+ 0.11739220057535216 0.43886948555458694)) (* x x)))"}],"value":"[:expr (pdiv x (+ (+ 0.11739220057535216 (+ 0.11739220057535216 0.43886948555458694)) (* x x)))]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:archived</span>","value":":archived"},{"type":"html","content":"<span class='clj-unkown'>true</span>","value":"true"}],"value":"[:archived true]"}],"value":"{:cluster 1, :fitness 0, :dominated false, :score-2 -11, :score-1 -10.384219526404047, :expr (pdiv x (+ (+ 0.11739220057535216 (+ 0.11739220057535216 0.43886948555458694)) (* x x))), :archived true}"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:cluster</span>","value":":cluster"},{"type":"html","content":"<span class='clj-unkown'>5</span>","value":"5"}],"value":"[:cluster 5]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:fitness</span>","value":":fitness"},{"type":"html","content":"<span class='clj-long'>0</span>","value":"0"}],"value":"[:fitness 0]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:dominated</span>","value":":dominated"},{"type":"html","content":"<span class='clj-unkown'>false</span>","value":"false"}],"value":"[:dominated false]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-2</span>","value":":score-2"},{"type":"html","content":"<span class='clj-long'>-1</span>","value":"-1"}],"value":"[:score-2 -1]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-1</span>","value":":score-1"},{"type":"html","content":"<span class='clj-double'>-11.369018564337175</span>","value":"-11.369018564337175"}],"value":"[:score-1 -11.369018564337175]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:expr</span>","value":":expr"},{"type":"html","content":"<span class='clj-double'>0.3880566416049639</span>","value":"0.3880566416049639"}],"value":"[:expr 0.3880566416049639]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:archived</span>","value":":archived"},{"type":"html","content":"<span class='clj-unkown'>true</span>","value":"true"}],"value":"[:archived true]"}],"value":"{:cluster 5, :fitness 0, :dominated false, :score-2 -1, :score-1 -11.369018564337175, :expr 0.3880566416049639, :archived true}"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:cluster</span>","value":":cluster"},{"type":"html","content":"<span class='clj-unkown'>7</span>","value":"7"}],"value":"[:cluster 7]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:fitness</span>","value":":fitness"},{"type":"html","content":"<span class='clj-long'>0</span>","value":"0"}],"value":"[:fitness 0]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:dominated</span>","value":":dominated"},{"type":"html","content":"<span class='clj-unkown'>false</span>","value":"false"}],"value":"[:dominated false]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-2</span>","value":":score-2"},{"type":"html","content":"<span class='clj-long'>-7</span>","value":"-7"}],"value":"[:score-2 -7]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-1</span>","value":":score-1"},{"type":"html","content":"<span class='clj-double'>-10.42893932477777</span>","value":"-10.42893932477777"}],"value":"[:score-1 -10.42893932477777]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:expr</span>","value":":expr"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>pdiv</span>","value":"pdiv"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"html","content":"<span class='clj-double'>0.3880566416049639</span>","value":"0.3880566416049639"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>*</span>","value":"*"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(* x x)"}],"value":"(+ 0.3880566416049639 (* x x))"}],"value":"(pdiv x (+ 0.3880566416049639 (* x x)))"}],"value":"[:expr (pdiv x (+ 0.3880566416049639 (* x x)))]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:archived</span>","value":":archived"},{"type":"html","content":"<span class='clj-unkown'>true</span>","value":"true"}],"value":"[:archived true]"}],"value":"{:cluster 7, :fitness 0, :dominated false, :score-2 -7, :score-1 -10.42893932477777, :expr (pdiv x (+ 0.3880566416049639 (* x x))), :archived true}"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:cluster</span>","value":":cluster"},{"type":"html","content":"<span class='clj-unkown'>10</span>","value":"10"}],"value":"[:cluster 10]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:fitness</span>","value":":fitness"},{"type":"html","content":"<span class='clj-long'>0</span>","value":"0"}],"value":"[:fitness 0]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:dominated</span>","value":":dominated"},{"type":"html","content":"<span class='clj-unkown'>false</span>","value":"false"}],"value":"[:dominated false]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-2</span>","value":":score-2"},{"type":"html","content":"<span class='clj-long'>-21</span>","value":"-21"}],"value":"[:score-2 -21]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-1</span>","value":":score-1"},{"type":"html","content":"<span class='clj-double'>-9.776710903801277</span>","value":"-9.776710903801277"}],"value":"[:score-1 -9.776710903801277]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:expr</span>","value":":expr"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>pdiv</span>","value":"pdiv"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>-</span>","value":"-"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>-</span>","value":"-"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>*</span>","value":"*"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(* x x)"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(+ x x)"}],"value":"(- (* x x) (+ x x))"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>pdiv</span>","value":"pdiv"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>-</span>","value":"-"},{"type":"html","content":"<span class='clj-double'>0.43886948555458694</span>","value":"0.43886948555458694"},{"type":"html","content":"<span class='clj-double'>0.9302342847080949</span>","value":"0.9302342847080949"}],"value":"(- 0.43886948555458694 0.9302342847080949)"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>*</span>","value":"*"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-double'>0.7581566014870404</span>","value":"0.7581566014870404"}],"value":"(* x 0.7581566014870404)"}],"value":"(pdiv (- 0.43886948555458694 0.9302342847080949) (* x 0.7581566014870404))"}],"value":"(- (- (* x x) (+ x x)) (pdiv (- 0.43886948555458694 0.9302342847080949) (* x 0.7581566014870404)))"},{"type":"html","content":"<span class='clj-double'>0.3880566416049639</span>","value":"0.3880566416049639"}],"value":"(+ (- (- (* x x) (+ x x)) (pdiv (- 0.43886948555458694 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639)"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(+ (+ (- (- (* x x) (+ x x)) (pdiv (- 0.43886948555458694 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639) x)"}],"value":"(pdiv x (+ (+ (- (- (* x x) (+ x x)) (pdiv (- 0.43886948555458694 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639) x))"}],"value":"[:expr (pdiv x (+ (+ (- (- (* x x) (+ x x)) (pdiv (- 0.43886948555458694 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639) x))]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:archived</span>","value":":archived"},{"type":"html","content":"<span class='clj-unkown'>true</span>","value":"true"}],"value":"[:archived true]"}],"value":"{:cluster 10, :fitness 0, :dominated false, :score-2 -21, :score-1 -9.776710903801277, :expr (pdiv x (+ (+ (- (- (* x x) (+ x x)) (pdiv (- 0.43886948555458694 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639) x)), :archived true}"}],"value":"({:cluster 0, :fitness 0, :dominated false, :score-2 -17, :score-1 -10.229031892543055, :expr (pdiv x (+ (- (- (* x x) x) (pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639)), :archived true} {:cluster 1, :fitness 0, :dominated false, :score-2 -11, :score-1 -10.384219526404047, :expr (pdiv x (+ (+ 0.11739220057535216 (+ 0.11739220057535216 0.43886948555458694)) (* x x))), :archived true} {:cluster 5, :fitness 0, :dominated false, :score-2 -1, :score-1 -11.369018564337175, :expr 0.3880566416049639, :archived true} {:cluster 7, :fitness 0, :dominated false, :score-2 -7, :score-1 -10.42893932477777, :expr (pdiv x (+ 0.3880566416049639 (* x x))), :archived true} {:cluster 10, :fitness 0, :dominated false, :score-2 -21, :score-1 -9.776710903801277, :expr (pdiv x (+ (+ (- (- (* x x) (+ x x)) (pdiv (- 0.43886948555458694 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639) x)), :archived true})"}
+;; <=
+
+;; @@
+(filter #(true? (:archived %)) (nth run-data 18))
+;; @@
+;; =>
+;;; {"type":"list-like","open":"<span class='clj-lazy-seq'>(<span>","close":"<span class='clj-lazy-seq'>)</span>","separator":" ","items":[{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:cluster</span>","value":":cluster"},{"type":"html","content":"<span class='clj-unkown'>0</span>","value":"0"}],"value":"[:cluster 0]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:fitness</span>","value":":fitness"},{"type":"html","content":"<span class='clj-long'>0</span>","value":"0"}],"value":"[:fitness 0]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:dominated</span>","value":":dominated"},{"type":"html","content":"<span class='clj-unkown'>false</span>","value":"false"}],"value":"[:dominated false]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-2</span>","value":":score-2"},{"type":"html","content":"<span class='clj-long'>-17</span>","value":"-17"}],"value":"[:score-2 -17]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-1</span>","value":":score-1"},{"type":"html","content":"<span class='clj-double'>-10.229031892543055</span>","value":"-10.229031892543055"}],"value":"[:score-1 -10.229031892543055]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:expr</span>","value":":expr"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>pdiv</span>","value":"pdiv"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>-</span>","value":"-"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>-</span>","value":"-"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>*</span>","value":"*"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(* x x)"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(- (* x x) x)"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>pdiv</span>","value":"pdiv"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>-</span>","value":"-"},{"type":"html","content":"<span class='clj-double'>0.051128920450839055</span>","value":"0.051128920450839055"},{"type":"html","content":"<span class='clj-double'>0.9302342847080949</span>","value":"0.9302342847080949"}],"value":"(- 0.051128920450839055 0.9302342847080949)"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>*</span>","value":"*"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-double'>0.7581566014870404</span>","value":"0.7581566014870404"}],"value":"(* x 0.7581566014870404)"}],"value":"(pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404))"}],"value":"(- (- (* x x) x) (pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404)))"},{"type":"html","content":"<span class='clj-double'>0.3880566416049639</span>","value":"0.3880566416049639"}],"value":"(+ (- (- (* x x) x) (pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639)"}],"value":"(pdiv x (+ (- (- (* x x) x) (pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639))"}],"value":"[:expr (pdiv x (+ (- (- (* x x) x) (pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639))]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:archived</span>","value":":archived"},{"type":"html","content":"<span class='clj-unkown'>true</span>","value":"true"}],"value":"[:archived true]"}],"value":"{:cluster 0, :fitness 0, :dominated false, :score-2 -17, :score-1 -10.229031892543055, :expr (pdiv x (+ (- (- (* x x) x) (pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639)), :archived true}"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:cluster</span>","value":":cluster"},{"type":"html","content":"<span class='clj-unkown'>1</span>","value":"1"}],"value":"[:cluster 1]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:fitness</span>","value":":fitness"},{"type":"html","content":"<span class='clj-long'>0</span>","value":"0"}],"value":"[:fitness 0]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:dominated</span>","value":":dominated"},{"type":"html","content":"<span class='clj-unkown'>false</span>","value":"false"}],"value":"[:dominated false]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-2</span>","value":":score-2"},{"type":"html","content":"<span class='clj-long'>-9</span>","value":"-9"}],"value":"[:score-2 -9]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-1</span>","value":":score-1"},{"type":"html","content":"<span class='clj-double'>-10.389097704628973</span>","value":"-10.389097704628973"}],"value":"[:score-1 -10.389097704628973]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:expr</span>","value":":expr"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>pdiv</span>","value":"pdiv"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"html","content":"<span class='clj-double'>0.11739220057535216</span>","value":"0.11739220057535216"},{"type":"html","content":"<span class='clj-double'>0.43886948555458694</span>","value":"0.43886948555458694"}],"value":"(+ 0.11739220057535216 0.43886948555458694)"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>*</span>","value":"*"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(* x x)"}],"value":"(+ (+ 0.11739220057535216 0.43886948555458694) (* x x))"}],"value":"(pdiv x (+ (+ 0.11739220057535216 0.43886948555458694) (* x x)))"}],"value":"[:expr (pdiv x (+ (+ 0.11739220057535216 0.43886948555458694) (* x x)))]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:archived</span>","value":":archived"},{"type":"html","content":"<span class='clj-unkown'>true</span>","value":"true"}],"value":"[:archived true]"}],"value":"{:cluster 1, :fitness 0, :dominated false, :score-2 -9, :score-1 -10.389097704628973, :expr (pdiv x (+ (+ 0.11739220057535216 0.43886948555458694) (* x x))), :archived true}"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:cluster</span>","value":":cluster"},{"type":"html","content":"<span class='clj-unkown'>3</span>","value":"3"}],"value":"[:cluster 3]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:fitness</span>","value":":fitness"},{"type":"html","content":"<span class='clj-long'>0</span>","value":"0"}],"value":"[:fitness 0]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:dominated</span>","value":":dominated"},{"type":"html","content":"<span class='clj-unkown'>false</span>","value":"false"}],"value":"[:dominated false]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-2</span>","value":":score-2"},{"type":"html","content":"<span class='clj-long'>-21</span>","value":"-21"}],"value":"[:score-2 -21]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-1</span>","value":":score-1"},{"type":"html","content":"<span class='clj-double'>-9.783594294723995</span>","value":"-9.783594294723995"}],"value":"[:score-1 -9.783594294723995]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:expr</span>","value":":expr"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>pdiv</span>","value":"pdiv"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>-</span>","value":"-"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>-</span>","value":"-"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>*</span>","value":"*"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(* x x)"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(+ x x)"}],"value":"(- (* x x) (+ x x))"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>pdiv</span>","value":"pdiv"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>-</span>","value":"-"},{"type":"html","content":"<span class='clj-double'>0.3880566416049639</span>","value":"0.3880566416049639"},{"type":"html","content":"<span class='clj-double'>0.9302342847080949</span>","value":"0.9302342847080949"}],"value":"(- 0.3880566416049639 0.9302342847080949)"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>*</span>","value":"*"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-double'>0.7581566014870404</span>","value":"0.7581566014870404"}],"value":"(* x 0.7581566014870404)"}],"value":"(pdiv (- 0.3880566416049639 0.9302342847080949) (* x 0.7581566014870404))"}],"value":"(- (- (* x x) (+ x x)) (pdiv (- 0.3880566416049639 0.9302342847080949) (* x 0.7581566014870404)))"},{"type":"html","content":"<span class='clj-double'>0.3880566416049639</span>","value":"0.3880566416049639"}],"value":"(+ (- (- (* x x) (+ x x)) (pdiv (- 0.3880566416049639 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639)"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(+ (+ (- (- (* x x) (+ x x)) (pdiv (- 0.3880566416049639 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639) x)"}],"value":"(pdiv x (+ (+ (- (- (* x x) (+ x x)) (pdiv (- 0.3880566416049639 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639) x))"}],"value":"[:expr (pdiv x (+ (+ (- (- (* x x) (+ x x)) (pdiv (- 0.3880566416049639 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639) x))]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:archived</span>","value":":archived"},{"type":"html","content":"<span class='clj-unkown'>true</span>","value":"true"}],"value":"[:archived true]"}],"value":"{:cluster 3, :fitness 0, :dominated false, :score-2 -21, :score-1 -9.783594294723995, :expr (pdiv x (+ (+ (- (- (* x x) (+ x x)) (pdiv (- 0.3880566416049639 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639) x)), :archived true}"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:cluster</span>","value":":cluster"},{"type":"html","content":"<span class='clj-unkown'>5</span>","value":"5"}],"value":"[:cluster 5]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:fitness</span>","value":":fitness"},{"type":"html","content":"<span class='clj-long'>0</span>","value":"0"}],"value":"[:fitness 0]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:dominated</span>","value":":dominated"},{"type":"html","content":"<span class='clj-unkown'>false</span>","value":"false"}],"value":"[:dominated false]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-2</span>","value":":score-2"},{"type":"html","content":"<span class='clj-long'>-1</span>","value":"-1"}],"value":"[:score-2 -1]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-1</span>","value":":score-1"},{"type":"html","content":"<span class='clj-double'>-11.369018564337175</span>","value":"-11.369018564337175"}],"value":"[:score-1 -11.369018564337175]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:expr</span>","value":":expr"},{"type":"html","content":"<span class='clj-double'>0.3880566416049639</span>","value":"0.3880566416049639"}],"value":"[:expr 0.3880566416049639]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:archived</span>","value":":archived"},{"type":"html","content":"<span class='clj-unkown'>true</span>","value":"true"}],"value":"[:archived true]"}],"value":"{:cluster 5, :fitness 0, :dominated false, :score-2 -1, :score-1 -11.369018564337175, :expr 0.3880566416049639, :archived true}"},{"type":"list-like","open":"<span class='clj-map'>{<span>","close":"<span class='clj-map'>}</span>","separator":", ","items":[{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:cluster</span>","value":":cluster"},{"type":"html","content":"<span class='clj-unkown'>6</span>","value":"6"}],"value":"[:cluster 6]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:fitness</span>","value":":fitness"},{"type":"html","content":"<span class='clj-long'>0</span>","value":"0"}],"value":"[:fitness 0]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:dominated</span>","value":":dominated"},{"type":"html","content":"<span class='clj-unkown'>false</span>","value":"false"}],"value":"[:dominated false]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-2</span>","value":":score-2"},{"type":"html","content":"<span class='clj-long'>-7</span>","value":"-7"}],"value":"[:score-2 -7]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:score-1</span>","value":":score-1"},{"type":"html","content":"<span class='clj-double'>-10.42893932477777</span>","value":"-10.42893932477777"}],"value":"[:score-1 -10.42893932477777]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:expr</span>","value":":expr"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>pdiv</span>","value":"pdiv"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>+</span>","value":"+"},{"type":"html","content":"<span class='clj-double'>0.3880566416049639</span>","value":"0.3880566416049639"},{"type":"list-like","open":"<span class='clj-list'>(<span>","close":"<span class='clj-list'>)</span>","separator":" ","items":[{"type":"html","content":"<span class='clj-symbol'>*</span>","value":"*"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"},{"type":"html","content":"<span class='clj-symbol'>x</span>","value":"x"}],"value":"(* x x)"}],"value":"(+ 0.3880566416049639 (* x x))"}],"value":"(pdiv x (+ 0.3880566416049639 (* x x)))"}],"value":"[:expr (pdiv x (+ 0.3880566416049639 (* x x)))]"},{"type":"list-like","open":"","close":"","separator":" ","items":[{"type":"html","content":"<span class='clj-keyword'>:archived</span>","value":":archived"},{"type":"html","content":"<span class='clj-unkown'>true</span>","value":"true"}],"value":"[:archived true]"}],"value":"{:cluster 6, :fitness 0, :dominated false, :score-2 -7, :score-1 -10.42893932477777, :expr (pdiv x (+ 0.3880566416049639 (* x x))), :archived true}"}],"value":"({:cluster 0, :fitness 0, :dominated false, :score-2 -17, :score-1 -10.229031892543055, :expr (pdiv x (+ (- (- (* x x) x) (pdiv (- 0.051128920450839055 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639)), :archived true} {:cluster 1, :fitness 0, :dominated false, :score-2 -9, :score-1 -10.389097704628973, :expr (pdiv x (+ (+ 0.11739220057535216 0.43886948555458694) (* x x))), :archived true} {:cluster 3, :fitness 0, :dominated false, :score-2 -21, :score-1 -9.783594294723995, :expr (pdiv x (+ (+ (- (- (* x x) (+ x x)) (pdiv (- 0.3880566416049639 0.9302342847080949) (* x 0.7581566014870404))) 0.3880566416049639) x)), :archived true} {:cluster 5, :fitness 0, :dominated false, :score-2 -1, :score-1 -11.369018564337175, :expr 0.3880566416049639, :archived true} {:cluster 6, :fitness 0, :dominated false, :score-2 -7, :score-1 -10.42893932477777, :expr (pdiv x (+ 0.3880566416049639 (* x x))), :archived true})"}
+;; <=
+
+;; **
+;;; Analyse results of symbolic regression.
+;; **
+
+;; @@
+(defn best-in-generation-1
+  [popn score-1-func score-2-func]
+  (apply max-key :score-1 (score-population popn score-1-func score-2-func)))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/best-in-generation-1</span>","value":"#'user/best-in-generation-1"}
+;; <=
+
+;; @@
+(defn best-in-generation-2
+  [popn score-1-func score-2-func]
+  (apply max-key :score-2 (score-population popn score-1-func score-2-func)))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/best-in-generation-2</span>","value":"#'user/best-in-generation-2"}
+;; <=
+
+;; @@
+;; Remove all archived expressions from each generation.
+(defn filter-out-archive
+  [generation]
+  (filter #(nil? (:archived %)) generation))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/filter-out-archive</span>","value":"#'user/filter-out-archive"}
+;; <=
+
+;; @@
+(def all-individuals (map #(filter-out-archive %) run-data))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/all-individuals</span>","value":"#'user/all-individuals"}
+;; <=
+
+;; @@
+(def bests-1 (doall (map #(best-in-generation-1 % (:score-1-func config) (:score-2-func config)) all-individuals)))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/bests-1</span>","value":"#'user/bests-1"}
+;; <=
+
+;; @@
+(def bests-2 (doall (map #(best-in-generation-2 % (:score-1-func config) (:score-2-func config)) all-individuals)))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/bests-2</span>","value":"#'user/bests-2"}
+;; <=
+
+;; @@
+(list-plot (map :score-1 bests-1) :joined true)
+;; @@
+;; =>
+;;; {"type":"vega","content":{"axes":[{"type":"x","scale":"x"},{"type":"y","scale":"y"}],"scales":[{"name":"x","type":"linear","range":"width","zero":false,"domain":{"data":"99661a0a-c4b4-4f5b-9e58-1799faa1c84e","field":"data.x"}},{"name":"y","type":"linear","range":"height","nice":true,"zero":false,"domain":{"data":"99661a0a-c4b4-4f5b-9e58-1799faa1c84e","field":"data.y"}}],"marks":[{"type":"line","from":{"data":"99661a0a-c4b4-4f5b-9e58-1799faa1c84e"},"properties":{"enter":{"x":{"field":"data.x","scale":"x"},"y":{"field":"data.y","scale":"y"},"stroke":{"value":"#FF29D2"},"strokeWidth":{"value":2},"strokeOpacity":{"value":1}}}}],"data":[{"name":"99661a0a-c4b4-4f5b-9e58-1799faa1c84e","values":[{"x":0,"y":-11.960429638211668},{"x":1,"y":-11.460265446939077},{"x":2,"y":-10.724408088527927},{"x":3,"y":-10.724408088527927},{"x":4,"y":-10.724408088527927},{"x":5,"y":-10.471311893439234},{"x":6,"y":-10.389097704628973},{"x":7,"y":-10.389097704628973},{"x":8,"y":-10.33127925900124},{"x":9,"y":-10.33127925900124},{"x":10,"y":-10.33127925900124},{"x":11,"y":-10.25121435290238},{"x":12,"y":-10.214577722553162},{"x":13,"y":-9.894271959087451},{"x":14,"y":-9.894271959087451},{"x":15,"y":-9.894271959087451},{"x":16,"y":-9.894271959087451},{"x":17,"y":-9.783594294723995},{"x":18,"y":-9.776710903801277},{"x":19,"y":-9.776710903801277}]}],"width":400,"height":247.2187957763672,"padding":{"bottom":20,"top":10,"right":10,"left":50}},"value":"#gorilla_repl.vega.VegaView{:content {:axes [{:type \"x\", :scale \"x\"} {:type \"y\", :scale \"y\"}], :scales [{:name \"x\", :type \"linear\", :range \"width\", :zero false, :domain {:data \"99661a0a-c4b4-4f5b-9e58-1799faa1c84e\", :field \"data.x\"}} {:name \"y\", :type \"linear\", :range \"height\", :nice true, :zero false, :domain {:data \"99661a0a-c4b4-4f5b-9e58-1799faa1c84e\", :field \"data.y\"}}], :marks [{:type \"line\", :from {:data \"99661a0a-c4b4-4f5b-9e58-1799faa1c84e\"}, :properties {:enter {:x {:field \"data.x\", :scale \"x\"}, :y {:field \"data.y\", :scale \"y\"}, :stroke {:value \"#FF29D2\"}, :strokeWidth {:value 2}, :strokeOpacity {:value 1}}}}], :data [{:name \"99661a0a-c4b4-4f5b-9e58-1799faa1c84e\", :values ({:x 0, :y -11.960429638211668} {:x 1, :y -11.460265446939077} {:x 2, :y -10.724408088527927} {:x 3, :y -10.724408088527927} {:x 4, :y -10.724408088527927} {:x 5, :y -10.471311893439234} {:x 6, :y -10.389097704628973} {:x 7, :y -10.389097704628973} {:x 8, :y -10.33127925900124} {:x 9, :y -10.33127925900124} {:x 10, :y -10.33127925900124} {:x 11, :y -10.25121435290238} {:x 12, :y -10.214577722553162} {:x 13, :y -9.894271959087451} {:x 14, :y -9.894271959087451} {:x 15, :y -9.894271959087451} {:x 16, :y -9.894271959087451} {:x 17, :y -9.783594294723995} {:x 18, :y -9.776710903801277} {:x 19, :y -9.776710903801277})}], :width 400, :height 247.2188, :padding {:bottom 20, :top 10, :right 10, :left 50}}}"}
+;; <=
+
+;; @@
+;(def scored-individuals (flatten (doall (map #(score-population % (:score-1-func config) (:score-2-func config)) all-individuals))))
+(def scored-generations (doall (map #(score-population % (:score-1-func config) (:score-2-func config)) all-individuals)))
+(def final-generation (last scored-generations))
+(def scored-individuals (flatten scored-generations))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/scored-individuals</span>","value":"#'user/scored-individuals"}
+;; <=
+
+;; @@
+(def pareto-front-individuals (into () (set (flatten (into-archive should-be-archived is-dominated final-generation final-generation)))))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/pareto-front-individuals</span>","value":"#'user/pareto-front-individuals"}
+;; <=
+
+;; @@
+(def scored-individuals (flatten (doall (map #(score-population % (:score-1-func config) (:score-2-func config)) all-individuals))))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/scored-individuals</span>","value":"#'user/scored-individuals"}
+;; <=
+
+;; @@
+(compose
+ (list-plot data)
+ (plot (functionalise (:expr (apply max-key :score-1 pareto-front-individuals))) [0 10]))
+;; @@
+;; =>
+;;; {"type":"vega","content":{"width":400,"height":247.2187957763672,"padding":{"bottom":20,"top":10,"right":10,"left":50},"scales":[{"name":"x","type":"linear","range":"width","zero":false,"domain":{"data":"568f7c99-8433-4d74-8bf4-f95e89c3899e","field":"data.x"}},{"name":"y","type":"linear","range":"height","nice":true,"zero":false,"domain":{"data":"568f7c99-8433-4d74-8bf4-f95e89c3899e","field":"data.y"}}],"axes":[{"type":"x","scale":"x"},{"type":"y","scale":"y"}],"data":[{"name":"568f7c99-8433-4d74-8bf4-f95e89c3899e","values":[{"x":0,"y":0.0},{"x":0.5,"y":0.479425538604203},{"x":1.0,"y":0.8414709848078965},{"x":1.5,"y":0.9974949866040544},{"x":2.0,"y":0.9092974268256817},{"x":2.5,"y":0.5984721441039564},{"x":3.0,"y":0.1411200080598672},{"x":3.5,"y":-0.35078322768961984},{"x":4.0,"y":-0.7568024953079282},{"x":4.5,"y":-0.977530117665097},{"x":5.0,"y":-0.9589242746631385},{"x":5.5,"y":-0.7055403255703919},{"x":6.0,"y":-0.27941549819892586},{"x":6.5,"y":0.21511998808781552},{"x":7.0,"y":0.6569865987187891},{"x":7.5,"y":0.9379999767747389},{"x":8.0,"y":0.9893582466233818},{"x":8.5,"y":0.7984871126234903},{"x":9.0,"y":0.4121184852417566},{"x":9.5,"y":-0.0751511204618093}]},{"name":"7ecc9290-71e7-44b2-901c-3933ba4c2a84","values":[{"x":0,"y":-0.0},{"x":0.10000000149011612,"y":0.014751214825341863},{"x":0.20000000298023224,"y":0.05766048919396757},{"x":0.30000000447034836,"y":0.1282925579656474},{"x":0.4000000059604645,"y":0.2262036387559174},{"x":0.5000000074505806,"y":0.34861040605879295},{"x":0.6000000089406967,"y":0.48850746204745893},{"x":0.7000000104308128,"y":0.6341037114147009},{"x":0.800000011920929,"y":0.7705737895163237},{"x":0.9000000134110451,"y":0.8839363351722931},{"x":1.0000000149011612,"y":0.9651007454320414},{"x":1.1000000163912773,"y":1.01173366568754},{"x":1.2000000178813934,"y":1.0272707618481003},{"x":1.3000000193715096,"y":1.0183310041169575},{"x":1.4000000208616257,"y":0.9922121793820232},{"x":1.5000000223517418,"y":0.9553370954345844},{"x":1.600000023841858,"y":0.9126575062232136},{"x":1.700000025331974,"y":0.8676591713940265},{"x":1.8000000268220901,"y":0.8226259434780612},{"x":1.9000000283122063,"y":0.7789552924190464},{"x":2.0000000298023224,"y":0.7374334887123416},{"x":2.1000000312924385,"y":0.6984452743525225},{"x":2.2000000327825546,"y":0.6621221591083221},{"x":2.3000000342726707,"y":0.6284425458677199},{"x":2.400000035762787,"y":0.5972971844060587},{"x":2.500000037252903,"y":0.568530874064519},{"x":2.600000038743019,"y":0.5419683919462883},{"x":2.7000000402331352,"y":0.5174301633154238},{"x":2.8000000417232513,"y":0.494741368995791},{"x":2.9000000432133675,"y":0.4737369151052641},{"x":3.0000000447034836,"y":0.45426383587138675},{"x":3.1000000461935997,"y":0.4361821366711478},{"x":3.200000047683716,"y":0.4193647174292387},{"x":3.300000049173832,"y":0.40369677947427324},{"x":3.400000050663948,"y":0.3890749667493259},{"x":3.500000052154064,"y":0.37540639501726547},{"x":3.6000000536441803,"y":0.36260766087325835},{"x":3.7000000551342964,"y":0.35060388332448306},{"x":3.8000000566244125,"y":0.3393278062537912},{"x":3.9000000581145287,"y":0.32871897498900476},{"x":4.000000059604645,"y":0.31872299106699814},{"x":4.100000061094761,"y":0.3092908439335764},{"x":4.200000062584877,"y":0.30037831535603493},{"x":4.300000064074993,"y":0.29194545084579904},{"x":4.400000065565109,"y":0.28395609181742304},{"x":4.500000067055225,"y":0.2763774621796598},{"x":4.6000000685453415,"y":0.269179803331091},{"x":4.700000070035458,"y":0.2623360519704931},{"x":4.800000071525574,"y":0.2558215556402341},{"x":4.90000007301569,"y":0.24961382144492475},{"x":5.000000074505806,"y":0.2436922938955847},{"x":5.100000075995922,"y":0.23803815830452368},{"x":5.200000077486038,"y":0.232634166589777},{"x":5.300000078976154,"y":0.2274644827376422},{"x":5.4000000804662704,"y":0.22251454551822183},{"x":5.500000081956387,"y":0.2177709463543213},{"x":5.600000083446503,"y":0.21322132051192852},{"x":5.700000084936619,"y":0.20885425001451036},{"x":5.800000086426735,"y":0.20465917688723612},{"x":5.900000087916851,"y":0.20062632551453993},{"x":6.000000089406967,"y":0.19674663304845388},{"x":6.100000090897083,"y":0.19301168693886572},{"x":6.200000092387199,"y":0.18941366877293406},{"x":6.3000000938773155,"y":0.18594530371167806},{"x":6.400000095367432,"y":0.1825998148993006},{"x":6.500000096857548,"y":0.17937088229689266},{"x":6.600000098347664,"y":0.1762526054583537},{"x":6.70000009983778,"y":0.17323946982399402},{"x":6.800000101327896,"y":0.17032631615751465},{"x":6.900000102818012,"y":0.1675083127958894},{"x":7.000000104308128,"y":0.16478093041996858},{"x":7.1000001057982445,"y":0.16213991908711417},{"x":7.200000107288361,"y":0.1595812872965132},{"x":7.300000108778477,"y":0.157101282883542},{"x":7.400000110268593,"y":0.15469637556214358},{"x":7.500000111758709,"y":0.15236324095404447},{"x":7.600000113248825,"y":0.1500987459611283},{"x":7.700000114738941,"y":0.14789993535270124},{"x":7.800000116229057,"y":0.14576401945300058},{"x":7.900000117719173,"y":0.14368836282632938},{"x":8.00000011920929,"y":0.1416704738678562},{"x":8.100000120699406,"y":0.1397079952175587},{"x":8.200000122189522,"y":0.13779869492317218},{"x":8.300000123679638,"y":0.13594045828545},{"x":8.400000125169754,"y":0.13413128032567093},{"x":8.50000012665987,"y":0.1323692588212308},{"x":8.600000128149986,"y":0.13065258786042366},{"x":8.700000129640102,"y":0.1289795518722206},{"x":8.800000131130219,"y":0.12734852009105965},{"x":8.900000132620335,"y":0.12575794142042818},{"x":9.00000013411045,"y":0.12420633966239165},{"x":9.100000135600567,"y":0.1226923090832528},{"x":9.200000137090683,"y":0.1212145102882471},{"x":9.300000138580799,"y":0.11977166638062586},{"x":9.400000140070915,"y":0.11836255938268339},{"x":9.500000141561031,"y":0.11698602689827071},{"x":9.600000143051147,"y":0.1156409589981295},{"x":9.700000144541264,"y":0.1143262953110003},{"x":9.80000014603138,"y":0.11304102230492193},{"x":9.900000147521496,"y":0.11178417074446398}]}],"marks":[{"type":"symbol","from":{"data":"568f7c99-8433-4d74-8bf4-f95e89c3899e"},"properties":{"enter":{"x":{"field":"data.x","scale":"x"},"y":{"field":"data.y","scale":"y"},"fill":{"value":"steelblue"},"fillOpacity":{"value":1}},"update":{"shape":"circle","size":{"value":70},"stroke":{"value":"transparent"}},"hover":{"size":{"value":210},"stroke":{"value":"white"}}}},{"type":"line","from":{"data":"7ecc9290-71e7-44b2-901c-3933ba4c2a84"},"properties":{"enter":{"x":{"field":"data.x","scale":"x"},"y":{"field":"data.y","scale":"y"},"stroke":{"value":"#FF29D2"},"strokeWidth":{"value":2},"strokeOpacity":{"value":1}}}}]},"value":"#gorilla_repl.vega.VegaView{:content {:width 400, :height 247.2188, :padding {:bottom 20, :top 10, :right 10, :left 50}, :scales [{:name \"x\", :type \"linear\", :range \"width\", :zero false, :domain {:data \"568f7c99-8433-4d74-8bf4-f95e89c3899e\", :field \"data.x\"}} {:name \"y\", :type \"linear\", :range \"height\", :nice true, :zero false, :domain {:data \"568f7c99-8433-4d74-8bf4-f95e89c3899e\", :field \"data.y\"}}], :axes [{:type \"x\", :scale \"x\"} {:type \"y\", :scale \"y\"}], :data ({:name \"568f7c99-8433-4d74-8bf4-f95e89c3899e\", :values ({:x 0, :y 0.0} {:x 0.5, :y 0.479425538604203} {:x 1.0, :y 0.8414709848078965} {:x 1.5, :y 0.9974949866040544} {:x 2.0, :y 0.9092974268256817} {:x 2.5, :y 0.5984721441039564} {:x 3.0, :y 0.1411200080598672} {:x 3.5, :y -0.35078322768961984} {:x 4.0, :y -0.7568024953079282} {:x 4.5, :y -0.977530117665097} {:x 5.0, :y -0.9589242746631385} {:x 5.5, :y -0.7055403255703919} {:x 6.0, :y -0.27941549819892586} {:x 6.5, :y 0.21511998808781552} {:x 7.0, :y 0.6569865987187891} {:x 7.5, :y 0.9379999767747389} {:x 8.0, :y 0.9893582466233818} {:x 8.5, :y 0.7984871126234903} {:x 9.0, :y 0.4121184852417566} {:x 9.5, :y -0.0751511204618093})} {:name \"7ecc9290-71e7-44b2-901c-3933ba4c2a84\", :values ({:x 0, :y -0.0} {:x 0.10000000149011612, :y 0.014751214825341863} {:x 0.20000000298023224, :y 0.05766048919396757} {:x 0.30000000447034836, :y 0.1282925579656474} {:x 0.4000000059604645, :y 0.2262036387559174} {:x 0.5000000074505806, :y 0.34861040605879295} {:x 0.6000000089406967, :y 0.48850746204745893} {:x 0.7000000104308128, :y 0.6341037114147009} {:x 0.800000011920929, :y 0.7705737895163237} {:x 0.9000000134110451, :y 0.8839363351722931} {:x 1.0000000149011612, :y 0.9651007454320414} {:x 1.1000000163912773, :y 1.01173366568754} {:x 1.2000000178813934, :y 1.0272707618481003} {:x 1.3000000193715096, :y 1.0183310041169575} {:x 1.4000000208616257, :y 0.9922121793820232} {:x 1.5000000223517418, :y 0.9553370954345844} {:x 1.600000023841858, :y 0.9126575062232136} {:x 1.700000025331974, :y 0.8676591713940265} {:x 1.8000000268220901, :y 0.8226259434780612} {:x 1.9000000283122063, :y 0.7789552924190464} {:x 2.0000000298023224, :y 0.7374334887123416} {:x 2.1000000312924385, :y 0.6984452743525225} {:x 2.2000000327825546, :y 0.6621221591083221} {:x 2.3000000342726707, :y 0.6284425458677199} {:x 2.400000035762787, :y 0.5972971844060587} {:x 2.500000037252903, :y 0.568530874064519} {:x 2.600000038743019, :y 0.5419683919462883} {:x 2.7000000402331352, :y 0.5174301633154238} {:x 2.8000000417232513, :y 0.494741368995791} {:x 2.9000000432133675, :y 0.4737369151052641} {:x 3.0000000447034836, :y 0.45426383587138675} {:x 3.1000000461935997, :y 0.4361821366711478} {:x 3.200000047683716, :y 0.4193647174292387} {:x 3.300000049173832, :y 0.40369677947427324} {:x 3.400000050663948, :y 0.3890749667493259} {:x 3.500000052154064, :y 0.37540639501726547} {:x 3.6000000536441803, :y 0.36260766087325835} {:x 3.7000000551342964, :y 0.35060388332448306} {:x 3.8000000566244125, :y 0.3393278062537912} {:x 3.9000000581145287, :y 0.32871897498900476} {:x 4.000000059604645, :y 0.31872299106699814} {:x 4.100000061094761, :y 0.3092908439335764} {:x 4.200000062584877, :y 0.30037831535603493} {:x 4.300000064074993, :y 0.29194545084579904} {:x 4.400000065565109, :y 0.28395609181742304} {:x 4.500000067055225, :y 0.2763774621796598} {:x 4.6000000685453415, :y 0.269179803331091} {:x 4.700000070035458, :y 0.2623360519704931} {:x 4.800000071525574, :y 0.2558215556402341} {:x 4.90000007301569, :y 0.24961382144492475} {:x 5.000000074505806, :y 0.2436922938955847} {:x 5.100000075995922, :y 0.23803815830452368} {:x 5.200000077486038, :y 0.232634166589777} {:x 5.300000078976154, :y 0.2274644827376422} {:x 5.4000000804662704, :y 0.22251454551822183} {:x 5.500000081956387, :y 0.2177709463543213} {:x 5.600000083446503, :y 0.21322132051192852} {:x 5.700000084936619, :y 0.20885425001451036} {:x 5.800000086426735, :y 0.20465917688723612} {:x 5.900000087916851, :y 0.20062632551453993} {:x 6.000000089406967, :y 0.19674663304845388} {:x 6.100000090897083, :y 0.19301168693886572} {:x 6.200000092387199, :y 0.18941366877293406} {:x 6.3000000938773155, :y 0.18594530371167806} {:x 6.400000095367432, :y 0.1825998148993006} {:x 6.500000096857548, :y 0.17937088229689266} {:x 6.600000098347664, :y 0.1762526054583537} {:x 6.70000009983778, :y 0.17323946982399402} {:x 6.800000101327896, :y 0.17032631615751465} {:x 6.900000102818012, :y 0.1675083127958894} {:x 7.000000104308128, :y 0.16478093041996858} {:x 7.1000001057982445, :y 0.16213991908711417} {:x 7.200000107288361, :y 0.1595812872965132} {:x 7.300000108778477, :y 0.157101282883542} {:x 7.400000110268593, :y 0.15469637556214358} {:x 7.500000111758709, :y 0.15236324095404447} {:x 7.600000113248825, :y 0.1500987459611283} {:x 7.700000114738941, :y 0.14789993535270124} {:x 7.800000116229057, :y 0.14576401945300058} {:x 7.900000117719173, :y 0.14368836282632938} {:x 8.00000011920929, :y 0.1416704738678562} {:x 8.100000120699406, :y 0.1397079952175587} {:x 8.200000122189522, :y 0.13779869492317218} {:x 8.300000123679638, :y 0.13594045828545} {:x 8.400000125169754, :y 0.13413128032567093} {:x 8.50000012665987, :y 0.1323692588212308} {:x 8.600000128149986, :y 0.13065258786042366} {:x 8.700000129640102, :y 0.1289795518722206} {:x 8.800000131130219, :y 0.12734852009105965} {:x 8.900000132620335, :y 0.12575794142042818} {:x 9.00000013411045, :y 0.12420633966239165} {:x 9.100000135600567, :y 0.1226923090832528} {:x 9.200000137090683, :y 0.1212145102882471} {:x 9.300000138580799, :y 0.11977166638062586} {:x 9.400000140070915, :y 0.11836255938268339} {:x 9.500000141561031, :y 0.11698602689827071} {:x 9.600000143051147, :y 0.1156409589981295} {:x 9.700000144541264, :y 0.1143262953110003} {:x 9.80000014603138, :y 0.11304102230492193} {:x 9.900000147521496, :y 0.11178417074446398})}), :marks ({:type \"symbol\", :from {:data \"568f7c99-8433-4d74-8bf4-f95e89c3899e\"}, :properties {:enter {:x {:field \"data.x\", :scale \"x\"}, :y {:field \"data.y\", :scale \"y\"}, :fill {:value \"steelblue\"}, :fillOpacity {:value 1}}, :update {:shape \"circle\", :size {:value 70}, :stroke {:value \"transparent\"}}, :hover {:size {:value 210}, :stroke {:value \"white\"}}}} {:type \"line\", :from {:data \"7ecc9290-71e7-44b2-901c-3933ba4c2a84\"}, :properties {:enter {:x {:field \"data.x\", :scale \"x\"}, :y {:field \"data.y\", :scale \"y\"}, :stroke {:value \"#FF29D2\"}, :strokeWidth {:value 2}, :strokeOpacity {:value 1}}}})}}"}
+;; <=
+
+;; @@
+(defn extract-coords
+  [indv]
+ (list (:score-2 indv) (:score-1 indv)))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/extract-coords</span>","value":"#'user/extract-coords"}
+;; <=
+
+;; @@
+(def pareto-points (map #(extract-coords %) scored-individuals))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/pareto-points</span>","value":"#'user/pareto-points"}
+;; <=
+
+;; @@
+(def pareto-front-points (map #(extract-coords %) pareto-front-individuals))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/pareto-front-points</span>","value":"#'user/pareto-front-points"}
+;; <=
+
+;; @@
+(list-plot pareto-front-points)
+;; @@
+;; =>
+;;; {"type":"vega","content":{"axes":[{"type":"x","scale":"x"},{"type":"y","scale":"y"}],"scales":[{"name":"x","type":"linear","range":"width","zero":false,"domain":{"data":"c2f12a7a-341e-40a8-82ce-4c70a0a0a215","field":"data.x"}},{"name":"y","type":"linear","range":"height","nice":true,"zero":false,"domain":{"data":"c2f12a7a-341e-40a8-82ce-4c70a0a0a215","field":"data.y"}}],"marks":[{"type":"symbol","from":{"data":"c2f12a7a-341e-40a8-82ce-4c70a0a0a215"},"properties":{"enter":{"x":{"field":"data.x","scale":"x"},"y":{"field":"data.y","scale":"y"},"fill":{"value":"steelblue"},"fillOpacity":{"value":1}},"update":{"shape":"circle","size":{"value":70},"stroke":{"value":"transparent"}},"hover":{"size":{"value":210},"stroke":{"value":"white"}}}}],"data":[{"name":"c2f12a7a-341e-40a8-82ce-4c70a0a0a215","values":[{"x":-21,"y":-9.776710903801277},{"x":-17,"y":-10.229031892543055},{"x":-11,"y":-10.384816365267074},{"x":-9,"y":-10.389097704628973},{"x":-1,"y":-11.369018564337175},{"x":-7,"y":-10.42893932477777}]}],"width":400,"height":247.2187957763672,"padding":{"bottom":20,"top":10,"right":10,"left":50}},"value":"#gorilla_repl.vega.VegaView{:content {:axes [{:type \"x\", :scale \"x\"} {:type \"y\", :scale \"y\"}], :scales [{:name \"x\", :type \"linear\", :range \"width\", :zero false, :domain {:data \"c2f12a7a-341e-40a8-82ce-4c70a0a0a215\", :field \"data.x\"}} {:name \"y\", :type \"linear\", :range \"height\", :nice true, :zero false, :domain {:data \"c2f12a7a-341e-40a8-82ce-4c70a0a0a215\", :field \"data.y\"}}], :marks [{:type \"symbol\", :from {:data \"c2f12a7a-341e-40a8-82ce-4c70a0a0a215\"}, :properties {:enter {:x {:field \"data.x\", :scale \"x\"}, :y {:field \"data.y\", :scale \"y\"}, :fill {:value \"steelblue\"}, :fillOpacity {:value 1}}, :update {:shape \"circle\", :size {:value 70}, :stroke {:value \"transparent\"}}, :hover {:size {:value 210}, :stroke {:value \"white\"}}}}], :data [{:name \"c2f12a7a-341e-40a8-82ce-4c70a0a0a215\", :values ({:x -21, :y -9.776710903801277} {:x -17, :y -10.229031892543055} {:x -11, :y -10.384816365267074} {:x -9, :y -10.389097704628973} {:x -1, :y -11.369018564337175} {:x -7, :y -10.42893932477777})}], :width 400, :height 247.2188, :padding {:bottom 20, :top 10, :right 10, :left 50}}}"}
+;; <=
+
+;; @@
+;; remove functions with a very poor score-1
+(def accurate-pareto-points (map #(if (< (second %) -8.3)
+       () %) pareto-points))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/accurate-pareto-points</span>","value":"#'user/accurate-pareto-points"}
+;; <=
+
+;; @@
+(def f-accurate-pareto (filter #(not (empty? %)) (into () (set accurate-pareto-points))))
+;; @@
+;; =>
+;;; {"type":"html","content":"<span class='clj-var'>#&#x27;user/f-accurate-pareto</span>","value":"#'user/f-accurate-pareto"}
+;; <=
+
+;; @@
+(list-plot 
+ f-accurate-pareto)
+;; @@
+;; =>
+;;; {"type":"vega","content":{"axes":[{"type":"x","scale":"x"},{"type":"y","scale":"y"}],"scales":[{"name":"x","type":"linear","range":"width","zero":false,"domain":{"data":"9d4f3492-2bb4-4056-a0b7-64a337d6290c","field":"data.x"}},{"name":"y","type":"linear","range":"height","nice":true,"zero":false,"domain":{"data":"9d4f3492-2bb4-4056-a0b7-64a337d6290c","field":"data.y"}}],"marks":[{"type":"symbol","from":{"data":"9d4f3492-2bb4-4056-a0b7-64a337d6290c"},"properties":{"enter":{"x":{"field":"data.x","scale":"x"},"y":{"field":"data.y","scale":"y"},"fill":{"value":"steelblue"},"fillOpacity":{"value":1}},"update":{"shape":"circle","size":{"value":70},"stroke":{"value":"transparent"}},"hover":{"size":{"value":210},"stroke":{"value":"white"}}}}],"data":[{"name":"9d4f3492-2bb4-4056-a0b7-64a337d6290c","values":[]}],"width":400,"height":247.2187957763672,"padding":{"bottom":20,"top":10,"right":10,"left":50}},"value":"#gorilla_repl.vega.VegaView{:content {:axes [{:type \"x\", :scale \"x\"} {:type \"y\", :scale \"y\"}], :scales [{:name \"x\", :type \"linear\", :range \"width\", :zero false, :domain {:data \"9d4f3492-2bb4-4056-a0b7-64a337d6290c\", :field \"data.x\"}} {:name \"y\", :type \"linear\", :range \"height\", :nice true, :zero false, :domain {:data \"9d4f3492-2bb4-4056-a0b7-64a337d6290c\", :field \"data.y\"}}], :marks [{:type \"symbol\", :from {:data \"9d4f3492-2bb4-4056-a0b7-64a337d6290c\"}, :properties {:enter {:x {:field \"data.x\", :scale \"x\"}, :y {:field \"data.y\", :scale \"y\"}, :fill {:value \"steelblue\"}, :fillOpacity {:value 1}}, :update {:shape \"circle\", :size {:value 70}, :stroke {:value \"transparent\"}}, :hover {:size {:value 210}, :stroke {:value \"white\"}}}}], :data [{:name \"9d4f3492-2bb4-4056-a0b7-64a337d6290c\", :values ()}], :width 400, :height 247.2188, :padding {:bottom 20, :top 10, :right 10, :left 50}}}"}
+;; <=
+
+;; @@
+
+;; @@
+
+;; @@
+
+;; @@
+
+;; @@
+
+;; @@
+
+;; @@
+
+;; @@
+
+;; @@
+
+;; @@
