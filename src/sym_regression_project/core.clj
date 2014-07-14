@@ -195,13 +195,13 @@
 
 (defn second-map
   [first-map distance expr-first expr-second]
+(map #(first-map gen-map distance expr-first %) expr-second))
 
 (defn distance-calcs
-  "Generate a map that gives the distance between every pair of individuals."
+  "Build gen-map."
   [c-archive]
   (filter #(not (= (:first-expr %) (:second-expr %)))
   (flatten (second-map first-map distance (flatten c-archive) (flatten c-archive)))))
-  (map #(first-map gen-map distance expr-first %) expr-second))
 
 (defn find-min-distance
   "Find the entry in distance-calcs that has the lowest (non-zero) value for distance."
