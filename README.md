@@ -2,6 +2,8 @@
 
 A symbolic regression program designed to find physical laws governing experimental data. The program can be configured by opening the interface.clj file in Gorilla REPL. 
 
+This program is based on a symbolic regression program orginally built by Jony Hudson.
+
 
 ## License
 

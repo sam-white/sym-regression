@@ -170,8 +170,64 @@
 
 
 
+;; If the archive set is not regularly thinned, the archive will grow without limit.
+;; This will lead to a rapid decrease in genetic diversity. The following functions are
+;; designed to thin the archive.
+(defn distance
+  "This function calculates the Euclidean distance between two individuals, x and y."
+  [x y]
+  (Math/sqrt 
+   (+ (* (- (:score-1 x) (:score-1 y)) (- (:score-1 x) (:score-1 y))) 
+      (* (- (:score-2 x) (:score-2 y)) (- (:score-2 x) (:score-2 y))))))
 
+;; gen-map is a map of every expression in the archive and the Euclidean distance
+;; between them.
+(defn gen-map
+  [distance expr-first expr-second]
+  {:first-expr (:expr expr-first)
+   :second-expr (:expr expr-second)
+   :distance (distance expr-first expr-second)})
 
+;; first-map and second-map are required to generate gen-map.
+(defn first-map
+  [gen-map distance expr-first expr-second]
+(map #(gen-map distance % expr-second) expr-first))
+
+(defn second-map
+  [first-map distance expr-first expr-second]
+
+(defn distance-calcs
+  "Generate a map that gives the distance between every pair of individuals."
+  [c-archive]
+  (filter #(not (= (:first-expr %) (:second-expr %)))
+  (flatten (second-map first-map distance (flatten c-archive) (flatten c-archive)))))
+  (map #(first-map gen-map distance expr-first %) expr-second))
+
+(defn find-min-distance
+  "Find the entry in distance-calcs that has the lowest (non-zero) value for distance."
+  [distance-calcs c-archive]
+  (apply min-key :distance (filter #(not (= 0. (:distance %))) (distance-calcs c-archive))))
+
+;; Generate a new archive set whereby a randomly selected individual from the closest pair
+;; of individuals is discarded. Thus, the archive set is reduced by 1.
+(defn thin-archive
+  "Select new-member by selecting a random individual from closest pair calculated with
+  find-min-distance. Remove other member of pair from archive. Add new-member back into the archive."
+  [find-min-distance distance-calcs c-archive]
+  (let [shortest-distance (find-min-distance distance-calcs c-archive)
+        new-member (rand-nth (flatten (map #(if (or (= (:first-expr shortest-distance) (:expr %))
+                                                    (= (:second-expr shortest-distance) (:expr %)))
+                                                 % ()) c-archive)))]
+  (cons new-member
+         (filter #(not (or (= (:first-expr shortest-distance) (:expr %))
+                           (= (:second-expr shortest-distance) (:expr %)))) c-archive))))
+
+(defn thinning-done
+  "Iterate thin-archive function until the total archive set is equal to max-archive-set."
+  [thin-archive find-min-distance distance-calcs c-archive archive-size max-archive-size]
+  (if (> archive-size max-archive-size)
+  (last (take (+ (- archive-size max-archive-size) 1) 
+        (iterate #(thin-archive find-min-distance distance-calcs %) c-archive))) c-archive))
 
 
 
