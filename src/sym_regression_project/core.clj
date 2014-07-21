@@ -32,6 +32,25 @@
 ;; Function that generates a data set from a given s-expression.
 (defn functionalise [ex] (eval (list 'fn '[x] ex)))
 
+;; Numerically differentiate data set using a two point evaluation.
+(defn vector-coords
+  [x y]
+  [x y])
+
+(defn numerical-derivative
+  "Finds the numerical derivative of a data set."
+  [data domain-step]
+  (let [y-coords (map #(second %) data) ;f(x)
+        x-coords (map #(first %) data) ;x
+        y1-values (drop-last 2 y-coords) ;f(x-h)
+        y2-values (drop 2 y-coords)  ;f(x+h)
+        dy (into [] (map #(- %2 %1) y1-values y2-values))
+        dx (into [] (drop-last 1 (drop 1 x-coords)))]  
+
+    (map [vector-coords] dx dy)))
+
+
+
 ;; Function that generates an initial population (size n) of s-expressions.
 (defn make-initial-population
   [n max-depth]
@@ -73,7 +92,7 @@
 ;; Second parameter to be optimised.
 (defn score-2
   "This function counts the number of nodes in an expression and outputs the negative of
-  that number. This is the metric by which an the complexity of an expression is determined."
+  that number. This is the metric by which the complexity of an expression is determined."
   [count-nodes ex]
   (* -1 (count-nodes ex)))
 
@@ -176,8 +195,8 @@
 (defn distance
   "This function calculates the Euclidean distance between two individuals, x and y."
   [x y]
-  (Math/sqrt 
-   (+ (* (- (:score-1 x) (:score-1 y)) (- (:score-1 x) (:score-1 y))) 
+  (Math/sqrt
+   (+ (* (- (:score-1 x) (:score-1 y)) (- (:score-1 x) (:score-1 y)))
       (* (- (:score-2 x) (:score-2 y)) (- (:score-2 x) (:score-2 y))))))
 
 ;; gen-map is a map of every expression in the archive and the Euclidean distance
@@ -212,7 +231,7 @@
 ;; of individuals is discarded. Thus, the archive set is reduced by 1.
 (defn thin-archive
   "Select new-member by selecting a random individual from closest pair calculated with
-  find-min-distance. Remove other member of pair from archive. Add new-member back into the archive."
+find-min-distance. Remove other member of pair from archive. Add new-member back into the archive."
   [find-min-distance distance-calcs c-archive]
   (let [shortest-distance (find-min-distance distance-calcs c-archive)
         new-member (rand-nth (flatten (map #(if (or (= (:first-expr shortest-distance) (:expr %))
@@ -226,7 +245,7 @@
   "Iterate thin-archive function until the total archive set is equal to max-archive-set."
   [thin-archive find-min-distance distance-calcs c-archive archive-size max-archive-size]
   (if (> archive-size max-archive-size)
-  (last (take (+ (- archive-size max-archive-size) 1) 
+  (last (take (+ (- archive-size max-archive-size) 1)
         (iterate #(thin-archive find-min-distance distance-calcs %) c-archive))) c-archive))
 
 
