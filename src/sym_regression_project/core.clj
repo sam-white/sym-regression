@@ -13,12 +13,14 @@
   [{:name '+ :arity 2}
    {:name '- :arity 2}
    {:name '* :arity 2}
-   {:name 'pdiv :arity 2}])
+   ;{:name 'pdiv :arity 2}
+])
 
 ;; Define function terminals (x and a random constant).
 (def terminals
   [(constantly 'x)
-   rand])
+   #(* 2 (rand))])
+
 
 ;; Recursive implementation of full tree generation.
 (defn random-full-tree
@@ -33,21 +35,21 @@
 (defn functionalise [ex] (eval (list 'fn '[x] ex)))
 
 ;; Numerically differentiate data set using a two point evaluation.
-(defn vector-coords
-  [x y]
-  [x y])
+;(defn vector-coords
+;  [x y]
+;  [x y])
 
-(defn numerical-derivative
-  "Finds the numerical derivative of a data set."
-  [data domain-step]
-  (let [y-coords (map #(second %) data) ;f(x)
-        x-coords (map #(first %) data) ;x
-        y1-values (drop-last 2 y-coords) ;f(x-h)
-        y2-values (drop 2 y-coords)  ;f(x+h)
-        dy (into [] (map #(- %2 %1) y1-values y2-values))
-        dx (into [] (drop-last 1 (drop 1 x-coords)))]  
-
-    (map [vector-coords] dx dy)))
+;(defn numerical-derivative
+;  "Finds the numerical derivative of a data set."
+;  [data domain-step]
+;  (let [y-coords (map #(second %) data) ;f(x)
+;        x-coords (map #(first %) data) ;x
+;        y1-values (drop-last 2 y-coords) ;f(x-h)
+;        y2-values (drop 2 y-coords)  ;f(x+h)
+;        dy (into [] (map #(- %2 %1) y1-values y2-values))
+;        dx (into [] (drop-last 1 (drop 1 x-coords)))]  
+;
+;    (map [vector-coords] dx dy)))
 
 
 
@@ -84,7 +86,7 @@
   "This function calculates how well a candidate expression fits a supplied data set. This is
    calculated using a modified chi squared test. A score of zero refers to an expression
    that perfectly describes the data set. A score much below zero refers to an expression
-   that poorly descrives the data set."
+   that poorly describes the data set."
   [data ex]
   (let [f (functionalise ex)]
     (* -1 (apply + (map #(Math/abs (- (f (first %)) (second %))) data)))))
@@ -152,6 +154,15 @@
    that should go into the archive."
   [should-be-archived is-dominated x y]
   (map #(should-be-archived is-dominated % y) x))
+
+(defn remove-repeats
+  [c-archive p-point]
+(rand-nth (filter #(and (= (second p-point) (:score-1 %))
+                     (= (first p-point) (:score-2 %))) c-archive)))
+
+(defn extract-coords
+  [indv]
+ (list (:score-2 indv) (:score-1 indv)))
 
 ;; In the SPEA algorithm, fitness is determined by a strength function.
 (defn strength-func
@@ -222,10 +233,17 @@
   (filter #(not (= (:first-expr %) (:second-expr %)))
   (flatten (second-map first-map distance (flatten c-archive) (flatten c-archive)))))
 
+;(defn find-min-distance
+;  "Find the entry in distance-calcs that has the lowest (non-zero) value for distance."
+;  [distance-calcs c-archive]
+;  (apply min-key :distance (filter #(and (not (= 0. (:distance %))) 
+;                                         (not (= 0 (:distance %)))) (distance-calcs c-archive))))
+
+
 (defn find-min-distance
-  "Find the entry in distance-calcs that has the lowest (non-zero) value for distance."
+  "Find the entry in distance-calcs that has the lowest value for distance."
   [distance-calcs c-archive]
-  (apply min-key :distance (filter #(not (= 0. (:distance %))) (distance-calcs c-archive))))
+  (apply min-key :distance (distance-calcs c-archive)))
 
 ;; Generate a new archive set whereby a randomly selected individual from the closest pair
 ;; of individuals is discarded. Thus, the archive set is reduced by 1.
