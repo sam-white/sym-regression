@@ -15,6 +15,7 @@
 (use '[gorilla-repl table html])
 (use 'sym-regression-project.render :reload)
 (use 'sym-regression-project.core :reload)
+(use 'sym-regression-project.symbolic :reload)
 (require '[clojure.java.io :as io])
 ;; @@
 ;; =>
