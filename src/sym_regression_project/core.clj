@@ -1,9 +1,15 @@
 (ns sym-regression-project.core
 (:require [clojure.zip :as zip])
-(use [clojure repl pprint walk]))
+(use [clojure repl pprint walk]
+     sym-regression-project.symbolic :reload))
 
 ;; This program will run a simple symbolic regression using data
-;; supplied in interface.clj. 
+;; supplied in interface.clj. Fitness is calculated by taking the chi-squared
+;; value of the function formed by the ratio of partial derivatives of a 
+;; test-function.
+
+;--------------------------------------------------------------------------------------------------------------------------------------------------
+; Basic symbolic regression functions.
 
 ;; Define the protected division function.
 (defn pdiv [x y] (if (zero? y) 1 (/ x y)))
@@ -13,8 +19,10 @@
   [{:name '+ :arity 2}
    {:name '- :arity 2}
    {:name '* :arity 2}
+   {:name 'Math/sin :arity 1}
+   {:name 'Math/cos :arity 1}
    ;{:name 'pdiv :arity 2}
-])
+     ])
 
 ;; Define function terminals (x and a random constant).
 (def terminals
@@ -35,23 +43,21 @@
 (defn functionalise [ex] (eval (list 'fn '[x] ex)))
 
 ;; Numerically differentiate data set using a two point evaluation.
-;(defn vector-coords
-;  [x y]
-;  [x y])
+(defn vector-coords
+  [x y]
+  [x y])
 
-;(defn numerical-derivative
-;  "Finds the numerical derivative of a data set."
-;  [data domain-step]
-;  (let [y-coords (map #(second %) data) ;f(x)
-;        x-coords (map #(first %) data) ;x
-;        y1-values (drop-last 2 y-coords) ;f(x-h)
-;        y2-values (drop 2 y-coords)  ;f(x+h)
-;        dy (into [] (map #(- %2 %1) y1-values y2-values))
-;        dx (into [] (drop-last 1 (drop 1 x-coords)))]  
-;
-;    (map [vector-coords] dx dy)))
+(defn numerical-derivative
+  "Finds the numerical derivative of a data set."
+  [data domain-step]
+  (let [y-coords (map #(second %) data) ;f(x)
+        x-coords (map #(first %) data) ;x
+        y1-values (drop-last 2 y-coords) ;f(x-h)
+        y2-values (drop 2 y-coords)  ;f(x+h)
+        dy (into [] (map #(- %2 %1) y1-values y2-values))
+        dx (into [] (drop-last 1 (drop 1 x-coords)))]  
 
-
+    (map #(vector-coords %1 %2) dx dy)))
 
 ;; Function that generates an initial population (size n) of s-expressions.
 (defn make-initial-population
@@ -156,14 +162,18 @@
   (map #(should-be-archived is-dominated % y) x))
 
 (defn remove-repeats
+  "Remove expressions that are non-identical yet have the same fitness value."
   [c-archive p-point]
 (rand-nth (filter #(and (= (second p-point) (:score-1 %))
                      (= (first p-point) (:score-2 %))) c-archive)))
 
 (defn extract-coords
+  "extract score-1 and score-2 from a scored individual and place into a list of coordinates."
   [indv]
  (list (:score-2 indv) (:score-1 indv)))
 
+
+;--------------------------------------------------------------------------------------------------------------------------------------------------
 ;; In the SPEA algorithm, fitness is determined by a strength function.
 (defn strength-func
   "The strength of an individual in the archive is determined by the number
@@ -198,8 +208,7 @@
   (let [competitors (repeatedly tournament-size #(rand-nth scored-popn))]
     (:expr (apply min-key :fitness competitors))))
 
-
-
+;--------------------------------------------------------------------------------------------------------------------------------------------------
 ;; If the archive set is not regularly thinned, the archive will grow without limit.
 ;; This will lead to a rapid decrease in genetic diversity. The following functions are
 ;; designed to thin the archive.
@@ -232,13 +241,6 @@
   [c-archive]
   (filter #(not (= (:first-expr %) (:second-expr %)))
   (flatten (second-map first-map distance (flatten c-archive) (flatten c-archive)))))
-
-;(defn find-min-distance
-;  "Find the entry in distance-calcs that has the lowest (non-zero) value for distance."
-;  [distance-calcs c-archive]
-;  (apply min-key :distance (filter #(and (not (= 0. (:distance %))) 
-;                                         (not (= 0 (:distance %)))) (distance-calcs c-archive))))
-
 
 (defn find-min-distance
   "Find the entry in distance-calcs that has the lowest value for distance."
