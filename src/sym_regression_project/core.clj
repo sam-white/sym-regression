@@ -19,8 +19,8 @@
   [{:name '+ :arity 2}
    {:name '- :arity 2}
    {:name '* :arity 2}
-   {:name 'Math/sin :arity 1}
-   {:name 'Math/cos :arity 1}
+   ;{:name 'Math/sin :arity 1}
+   ;{:name 'Math/cos :arity 1}
    ;{:name 'pdiv :arity 2}
      ])
 
